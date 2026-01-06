@@ -1,0 +1,16 @@
+# Core dependencies for Gemini MCP Chat with Vertex AI
+google-genai>=0.2.0
+mcp>=1.0.0
+httpx-sse>=0.4.0
+aiohttp>=3.9.0
+
+# HTTP MCP Server dependencies
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
+# Testing dependencies
+requests>=2.31.0
+
+# Optional: for enhanced functionality
+python-dotenv>=1.0.0  # For environment variable management
+

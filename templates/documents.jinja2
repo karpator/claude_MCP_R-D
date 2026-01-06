@@ -1,0 +1,6 @@
+Documents:
+{% for item in documents %}
+<DOCUMENT index="{{loop.index}}" display_name="{{item.document_id}}">
+{{item.context}}
+</DOCUMENT>
+{% endfor %}

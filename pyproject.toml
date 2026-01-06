@@ -1,0 +1,31 @@
+[project]
+name = "gemini-mcp-r-d"
+version = "0.1.0"
+description = "Gemini MCP Chat with Vertex AI - integrates Gemini with MCP servers"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=0.2.0",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "mcp>=1.25.0",
+    "jinja2>=3.1.6",
+    "rapidfuzz>=3.14.3",
+    "aiostream>=0.7.1",
+    "patterns>=0.1.2",
+    "anthropic>=0.75.0",
+    "elasticsearch>=9.2.1",
+    "google-cloud-logging>=3.13.0",
+    "keyrings-google-artifactregistry-auth==1.1.2",
+    "application-logging~=1.0.1",
+    "vertexai-tools~=1.4.8",
+    "streamingtool~=1.1.1",
+    "numpy>=2.4.0",
+    "vertexai>=1.71.1",
+]
+[tool.uv]
+keyring-provider = "subprocess"
+
+[[tool.uv.index]]
+name = "gcp-index"
+url = "https://oauth2accesstoken@europe-west4-python.pkg.dev/hu0092-bus-t-ai/plutoai-python-tools/simple/"
