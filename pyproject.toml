@@ -14,7 +14,6 @@ dependencies = [
     "aiostream>=0.7.1",
     "patterns>=0.1.2",
     "anthropic>=0.75.0",
-    "elasticsearch>=9.2.1",
     "google-cloud-logging>=3.13.0",
     "keyrings-google-artifactregistry-auth==1.1.2",
     "application-logging~=1.0.1",
@@ -22,6 +21,7 @@ dependencies = [
     "streamingtool~=1.1.1",
     "numpy>=2.4.0",
     "vertexai>=1.71.1",
+    "elasticsearch[async]~=8.17.1",
 ]
 [tool.uv]
 keyring-provider = "subprocess"

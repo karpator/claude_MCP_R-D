@@ -48,46 +48,32 @@ async def test_retrive_documents():
                 print()
 
                 if "result" in result:
-                    content = result["result"]["content"]
-                    print(f"📦 Response content type: {type(content)}")
-                    print(f"📦 Number of content items: {len(content)}")
-                    print()
+                    # Extract the nested content structure
+                    content_list = result["result"]["content"]
 
-                    if content and len(content) > 0:
-                        first_item = content[0]
-                        print(f"🔍 First content item type: {first_item.get('type')}")
+                    if content_list and len(content_list) > 0:
+                        first_item = content_list[0]
 
                         if first_item.get('type') == 'text':
-                            text_content = first_item.get('text', '')
+                            # Parse the outer JSON string
+                            outer_json = json.loads(first_item.get('text', '{}'))
 
-                            # Try to parse as JSON
-                            try:
-                                parsed_data = json.loads(text_content)
-                                print("✅ Response is valid JSON")
+                            if 'documents' in outer_json:
+                                documents_str = outer_json['documents']
+
+                                print("✅ Successfully extracted documents")
+                                print(f"📄 Documents content length: {len(documents_str)}")
                                 print()
+                                print("📝 Documents content:")
+                                print("-" * 80)
+                                print(documents_str)
+                                print("-" * 80)
 
-                                if 'documents' in parsed_data:
-                                    documents = parsed_data['documents']
-                                    print(f"📄 Documents retrieved (length): {len(documents) if isinstance(documents, str) else 'N/A'}")
-                                    print()
-                                    print("📝 Documents content preview:")
-                                    print("-" * 80)
-                                    if isinstance(documents, str):
-                                        # Preview first 500 characters
-                                        preview = documents[:500]
-                                        print(preview)
-                                        if len(documents) > 500:
-                                            print(f"\n... (truncated, total length: {len(documents)} characters)")
-                                    else:
-                                        print(documents)
-                                    print("-" * 80)
-                                else:
-                                    print("⚠️ No 'documents' key in response")
-                                    print(f"Response keys: {list(parsed_data.keys())}")
-
-                            except json.JSONDecodeError as e:
-                                print(f"⚠️ Response is not valid JSON: {e}")
-                                print(f"Raw text preview: {text_content[:200]}...")
+                                # Count documents
+                                doc_count = documents_str.count('<DOCUMENT')
+                                print(f"\n📊 Total documents found: {doc_count}")
+                            else:
+                                print("⚠️ No 'documents' key found")
                         else:
                             print(f"⚠️ Unexpected content type: {first_item.get('type')}")
                     else:

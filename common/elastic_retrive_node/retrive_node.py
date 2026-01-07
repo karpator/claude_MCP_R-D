@@ -1,14 +1,14 @@
 import os
 
 from adapters.es_client import ESClient
-
+from pocketflows import AsyncNode
 from application_logging import ApplicationLogging
 from .utils import search_multi_index, aggregate_to_documents, rank_documents, SearchConfig
 
 logger = ApplicationLogging.depends()
 
 
-class RetriveNode():
+class RetriveNode(AsyncNode):
 
     async def prep_async(self, keywords, indices, vector):
 
@@ -48,7 +48,7 @@ class RetriveNode():
                 documents = await aggregate_to_documents(chunks)
 
                 top_docs = rank_documents(documents=documents,
-                                          top_n=10,
+                                          top_n=3,
                                           query_keywords=keywords
                 )
 

@@ -80,8 +80,8 @@ async def execute_tool(tool_name: str, tool_args: Dict[str, Any]) -> List[Dict[s
         env = Environment(loader=FileSystemLoader(current_dir), enable_async=True)
         template = env.get_template("claude_MCP_R-D/templates/documents.jinja2")
 
-        documents_str = await template.render_async(documents=documents["documents"])
-
+        documents_str = await template.render_async(documents=documents)
+        print(documents_str)
         result = {
             "documents": documents_str
         }
