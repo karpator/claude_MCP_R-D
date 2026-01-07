@@ -48,7 +48,7 @@ class RetriveNode(AsyncNode):
                 documents = await aggregate_to_documents(chunks)
 
                 top_docs = rank_documents(documents=documents,
-                                          top_n=3,
+                                          top_n=10,
                                           query_keywords=keywords
                 )
 

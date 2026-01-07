@@ -21,6 +21,7 @@ from vertexai.language_models import TextEmbeddingModel
 
 from adapters.embedding_service import EmbeddingService
 from common import RetriveNode
+from post_retriver import AsyncPostRetriever
 
 # Initialize Vertex AI and embedding model once at startup
 vertexai.init()
@@ -75,7 +76,8 @@ async def execute_tool(tool_name: str, tool_args: Dict[str, Any]) -> List[Dict[s
         # Fix: Await the prep_async first, then pass result to exec_async
         prep_result = await retriver.prep_async(keywords, indices, query_embedding)
         documents = await retriver.exec_async(prep_result)
-
+        delta_extraction = AsyncPostRetriever()
+        documents = (await delta_extraction.exec_async(documents)).get("documents", [])
         current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env = Environment(loader=FileSystemLoader(current_dir), enable_async=True)
         template = env.get_template("claude_MCP_R-D/templates/documents.jinja2")
