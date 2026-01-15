@@ -30,7 +30,8 @@ embedding_model = TextEmbeddingModel.from_pretrained("text-multilingual-embeddin
 # ============================================================================
 # TOOL DEFINITIONS - CUSTOMIZE THIS
 # ============================================================================
-
+#TODO: JSON-ből beolvasva
+#TODO: description length???
 TOOLS = [
     {
         "name": "retrive_documents",
@@ -68,6 +69,9 @@ async def execute_tool(tool_name: str, tool_args: Dict[str, Any]) -> List[Dict[s
         query = tool_args.get("query", "")
         keywords = tool_args.get("keywords", [])
         indices = tool_args.get("indices", [])
+        if indices not in ["pipeline_solaw_test"]:
+            indices = ["pipeline_solaw_test"]
+
 
         embedder = EmbeddingService(embedding_model)
         query_embedding = embedder.get_embedding(query)
