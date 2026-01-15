@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 class DatabaseType(Enum):
     """Database types enumeration"""
-    SOLAW = "solaw"
+    MAGICBOOK = "magicbook"
 
 
 @dataclass
@@ -25,14 +25,14 @@ class DatabaseConfiguration:
     
     # Central UUID and configuration registry
     DATABASES = {
-        DatabaseType.SOLAW: DatabaseInfo(
-            uuid="09eaa4a7-dbef-46c3-96a6-83e82251d664",
+        DatabaseType.MAGICBOOK: DatabaseInfo(
+            uuid="7650451c-fec0-4cd8-afa2-f175b12e350c",
             display_name="Business-to-Business",
-            index_pattern=f"pipeline_solaw_test"
+            index_pattern=f"knowledgebase_magicbook_dev"
         )
     }
     
-    DEFAULT_DATABASE = DatabaseType.SOLAW
+    DEFAULT_DATABASE = DatabaseType.MAGICBOOK
     ALL_DATABASES = list(DATABASES.keys())
     
     @classmethod

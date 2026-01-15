@@ -28,36 +28,36 @@ vertexai.init()
 embedding_model = TextEmbeddingModel.from_pretrained("text-multilingual-embedding-002")
 
 # ============================================================================
-# TOOL DEFINITIONS - CUSTOMIZE THIS
+# TOOL DEFINITIONS - LOADED FROM JSON FILE
 # ============================================================================
-#TODO: JSON-ből beolvasva
-#TODO: description length???
-TOOLS = [
-    {
-        "name": "retrive_documents",
-        "description": "Retrive documents from the database based on the query and keywords.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Natural language search query for financial data"
-                },
-                "keywords": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of keywords to filter results"
-                },
-                "indices": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of index names to search in (e.g., 'penzugy_jelentesek')"
-                }
-            },
-            "required": ["query", "keywords", "indices"]
-        }
-    }
-]
+
+def load_tools(json_path: str = "mcp_tools.json") -> List[Dict[str, Any]]:
+    """
+    Load tool definitions from a JSON file.
+
+    Args:
+        json_path: Path to the JSON file containing tool definitions
+
+    Returns:
+        List of tool definitions
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    full_path = os.path.join(script_dir, json_path)
+
+    try:
+        with open(full_path, 'r', encoding='utf-8') as f:
+            tools = json.load(f)
+        print(f"Loaded {len(tools)} tool(s) from {json_path}")
+        return tools
+    except FileNotFoundError:
+        print(f"Warning: {json_path} not found. Using empty tools list.")
+        return []
+    except json.JSONDecodeError as e:
+        print(f"Error parsing {json_path}: {e}")
+        return []
+
+# Load tools at module initialization
+TOOLS = load_tools()
 
 
 # ============================================================================
@@ -69,8 +69,6 @@ async def execute_tool(tool_name: str, tool_args: Dict[str, Any]) -> List[Dict[s
         query = tool_args.get("query", "")
         keywords = tool_args.get("keywords", [])
         indices = tool_args.get("indices", [])
-        if indices not in ["pipeline_solaw_test"]:
-            indices = ["pipeline_solaw_test"]
 
 
         embedder = EmbeddingService(embedding_model)
@@ -218,11 +216,11 @@ async def execute_tool_endpoint(request: Request):
 
 
 if __name__ == "__main__":
-    print("🚀 Starting ElasticSearch MCP Server...")
-    print("📡 Server will be available at: http://localhost:8000")
-    print("🔌 MCP endpoint: http://localhost:8000/mcp")
-    print("🛠️  Tools endpoint: http://localhost:8000/mcp/tools")
-    print("\n✨ Implement your search logic in execute_tool()")
+    print("Starting ElasticSearch MCP Server...")
+    print(f"Loaded {len(TOOLS)} tool(s) from mcp_tools.json")
+    print("Server will be available at: http://localhost:8000")
+    print("MCP endpoint: http://localhost:8000/mcp")
+    print("Tools endpoint: http://localhost:8000/mcp/tools")
     print("Press Ctrl+C to stop the server\n")
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
