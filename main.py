@@ -142,13 +142,12 @@ class GeminiMCPChat:
         self.enable_grounding = True
         self.force_tool_use = True
 
-        # Initialize hierarchical history manager
+        # Initialize queue-based history manager
         self.history_manager = ConversationHistoryManager(
             project_id=project_id,
             region=region,
             model="gemini-2.5-flash",  # Lightweight model for compression
-            recent_message_count=3,  # Keep last 5 messages verbatim
-            compression_threshold=3  # Compress when > 10 messages
+            queue_size=3  # Keep last 10 messages in queue
         )
 
     async def connect_servers(self, endpoints: Dict[str, str]):
@@ -176,7 +175,7 @@ class GeminiMCPChat:
 
         current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env = Environment(loader=FileSystemLoader(current_dir), enable_async=True)
-        system_prompt = await env.get_template("claude_MCP_R-D/templates/documents.jinja2").render_async(
+        system_prompt = await env.get_template("claude_MCP_R-D/templates/system_prompt.jinja2").render_async(
             language_code="hun",
         )
 
@@ -215,108 +214,18 @@ class GeminiMCPChat:
             thinking_config=ThinkingConfig(include_thoughts=True, thinking_budget=1800)
         )
 
-        turn_count = 0
-        final_response = None
+        response_message = await self.client.aio.models.generate_content(
+            model=self.model,
+            contents=current_history,
+            config=generate_content_config,
+        )
 
-        while turn_count < max_turns:
-            turn_count += 1
+        await self.history_manager.add_messages([
+            user_content,
+            response_message
+        ])
 
-            response_stream = await self.client.aio.models.generate_content_stream(
-                model=self.model,
-                contents=current_history,
-                config=generate_content_config,
-            )
-
-            # Collect chunks and check for function calls
-            full_response_parts = []
-            has_function_call = False
-
-            async for chunk in response_stream:
-                full_response_parts.append(chunk)
-                yield chunk
-
-                # Check if this chunk contains a function call
-                if chunk.candidates and chunk.candidates[0].content.parts:
-                    for part in chunk.candidates[0].content.parts:
-                        if part.function_call:
-                            has_function_call = True
-
-            if not full_response_parts or not full_response_parts[-1].candidates:
-                break
-
-            # Get the last complete response
-            last_candidate = full_response_parts[-1].candidates[0]
-
-            # If no function call, we're done
-            if not has_function_call:
-                final_response = last_candidate.content
-                break
-
-            # Execute function calls and add to history
-            model_response_parts = []
-            function_response_parts = []
-
-            for part in last_candidate.content.parts:
-                model_response_parts.append(part)
-
-                if part.function_call:
-                    func_call = part.function_call
-                    print(f"\n[Tool Call: {func_call.name}]")
-
-                    try:
-                        # Find which server has this tool
-                        result = None
-                        for server_name, session in self.mcp_client.sessions.items():
-                            tools_response = await session.list_tools()
-                            if any(t.name == func_call.name for t in tools_response.tools):
-                                result = await self.mcp_client.call(server_name, func_call.name, dict(func_call.args))
-                                break
-
-                        if result:
-                            function_response_parts.append(
-                                types.Part.from_function_response(
-                                    name=func_call.name,
-                                    response={"result": result.content}
-                                )
-                            )
-                    except Exception as e:
-                        print(f"\n Error executing tool: {e}")
-                        function_response_parts.append(
-                            types.Part.from_function_response(
-                                name=func_call.name,
-                                response={"error": str(e)}
-                            )
-                        )
-
-            # Add model response and function results to history
-            current_history.append(types.Content(role="model", parts=model_response_parts))
-            current_history.append(types.Content(role="user", parts=function_response_parts))
-
-        # Save to history if we got a final response
-        if final_response:
-            await self.history_manager.add_messages([
-                user_content,
-                final_response
-            ])
-
-    async def send_message(self, user_message: str, max_turns: int = 5) -> str:
-        """
-        Send a message to Gemini with automatic MCP tool handling.
-        Uses send_message_stream internally and collects the full response.
-
-        Args:
-            user_message: The user's message
-            max_turns: Maximum number of tool-calling turns
-
-        Returns:
-            Gemini's response text
-        """
-        full_response = ""
-        async for chunk in self.send_message_stream(user_message, max_turns):
-            if chunk.text:
-                full_response += chunk.text
-
-        return full_response
+        yield response_message
 
     async def chat_loop(self):
         """Run an interactive chat loop."""
@@ -352,10 +261,8 @@ class GeminiMCPChat:
                 # Get response from Gemini with streaming
                 print("\nGemini: ", end="", flush=True)
                 full_response = ""
-                async for chunk in self.send_message_stream(user_input):
-                    if chunk.text:
-                        print(chunk.text, end="", flush=True)
-                        full_response += chunk.text
+                async for answer in self.send_message_stream(user_input):
+                    print(answer.text, end="", flush=True)
                 print("\n")  # New line after response
 
             except KeyboardInterrupt:

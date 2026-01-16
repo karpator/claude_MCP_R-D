@@ -1,22 +1,24 @@
 """
-Hierarchical Conversation History Manager
-Manages conversation history by keeping recent messages in full detail
-and progressively compressing older messages using Gemini.
+Queue-Based Conversation History Manager
+Manages conversation history by keeping recent messages in a fixed-size queue
+and maintaining a condensed summary of all older messages.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict
+from collections import deque
 from google import genai
 from google.genai import types
 
 
 class ConversationHistoryManager:
     """
-    Manages conversation history with hierarchical compression.
+    Manages conversation history with queue-based compression.
 
     Strategy:
-    - Keep the last N messages verbatim (full detail)
-    - Compress older messages into progressively condensed summaries
-    - Use a separate Gemini model to perform compression
+    - Keep the last N messages in a fixed-size queue
+    - Maintain one condensed text summary of all older messages
+    - When adding a new message: pop oldest from queue, compress it into summary, push new message
+    - Return history as: condensed summary + recent queue messages
     """
 
     def __init__(
@@ -24,8 +26,7 @@ class ConversationHistoryManager:
         project_id: str,
         region: str = "global",
         model: str = "gemini-2.0-flash-exp",
-        recent_message_count: int = 5,
-        compression_threshold: int = 10
+        queue_size: int = 3
     ):
         """
         Initialize the history manager.
@@ -34,8 +35,7 @@ class ConversationHistoryManager:
             project_id: Google Cloud project ID
             region: GCP region for Vertex AI
             model: Model to use for compression (lightweight model recommended)
-            recent_message_count: Number of recent messages to keep verbatim
-            compression_threshold: Trigger compression when history exceeds this length
+            queue_size: Number of recent messages to keep in the queue
         """
         self.client = genai.Client(
             vertexai=True,
@@ -44,112 +44,105 @@ class ConversationHistoryManager:
         )
 
         self.model = model
-        self.recent_message_count = recent_message_count
-        self.compression_threshold = compression_threshold
+        self.queue_size = queue_size
 
-        # Store full conversation history
-        self.full_history: List[types.Content] = []
+        # Fixed-size queue for recent messages
+        self.message_queue: deque[types.Content] = deque(maxlen=queue_size)
 
-        # Store compressed summaries of older conversations
-        self.compressed_summaries: List[str] = []
+        # Single condensed text summary of all older messages
+        self.condensed_summary: str = ""
+
 
     async def add_messages(self, contents: List[types.Content]):
         """
-        Add multiple messages to the history at once and check if compression is needed.
+        Add multiple messages to the history.
+        For each message: if queue is full, pop oldest and compress it before adding new.
 
         Args:
             contents: List of message contents (user and/or model)
         """
-        # Add all messages
-        self.full_history.extend(contents)
-        #TODO: get rid of full_history, only keep recent + compressed summaries
-        if len(self.full_history) > self.compression_threshold:
-            uncompressed_count = len(self.full_history) - self.recent_message_count
-            already_compressed = len(self.compressed_summaries)
-            messages_to_compress = uncompressed_count - already_compressed
-
-            if messages_to_compress > 0:
-                await self._compress_older_messages(messages_to_compress)
+        for content in contents:
+            await self.add_message(content)
 
     async def add_message(self, content: types.Content):
         """
-        Add a single message to the history and check if compression is needed.
+        Add a single message to the history.
+        If queue is full, pop the oldest message, compress it into the summary, then add new message.
 
         Args:
             content: The message content (user or model)
         """
-        await self.add_messages([content])
+        # If queue is at capacity, compress the oldest message before adding new one
+        if len(self.message_queue) == self.queue_size:
+            oldest_message = self.message_queue[0]  # Peek at oldest without popping yet
+            await self._compress_message_into_summary(oldest_message)
+
+        # Add new message (deque will automatically pop oldest if at maxlen)
+        self.message_queue.append(content)
+
 
     def get_managed_history(self) -> List[types.Content]:
         """
         Get the managed history for sending to the main model.
-        Compression already happened in add_message(), so just build the view.
+        Returns: condensed summary (if exists) + recent messages from queue
 
         Returns:
-            List of Content objects with recent messages + compressed summaries
+            List of Content objects with condensed summary + recent queue messages
         """
-        # If history is below threshold, return as-is
-        if len(self.full_history) <= self.compression_threshold:
-            return self.full_history
-
-        # Build managed history: compressed summary + recent messages
         managed_history = []
 
-        # Add compressed summary as a system context if we have summaries
-        if self.compressed_summaries:
-            summary_text = self._build_summary_text()
+        # Add condensed summary as a user message if we have compressed history
+        if self.condensed_summary:
             managed_history.append(
                 types.Content(
                     role="user",
                     parts=[types.Part.from_text(
-                        text=f"[Previous conversation summary: {summary_text}]"
+                        text=f"[Previous conversation summary: {self.condensed_summary}]"
                     )]
                 )
             )
 
-        # Add recent messages verbatim
-        recent_messages = self.full_history[-self.recent_message_count:]
-        managed_history.extend(recent_messages)
+        # Add all messages from the queue in reverse order (oldest to newest)
+        managed_history.extend(reversed(list(self.message_queue)))
 
         return managed_history
 
-    async def _compress_older_messages(self, count: int):
+
+    async def _compress_message_into_summary(self, message: types.Content):
         """
-        Compress a batch of older messages into a summary.
+        Compress a single message into the condensed summary.
+        Takes the oldest message and merges it into the existing summary.
 
         Args:
-            count: Number of messages to compress from the older part
+            message: The message to compress into the summary
         """
-        # Get messages to compress (excluding recent ones)
-        old_messages = self.full_history[:-self.recent_message_count]
-
-        # Get the messages that haven't been compressed yet
-        start_idx = len(self.compressed_summaries) * 2  # Each summary covers ~2 exchanges
-        end_idx = start_idx + count
-        messages_to_compress = old_messages[start_idx:end_idx]
-
-        if not messages_to_compress:
-            return
-
-        # Build the conversation text for compression
-        conversation_text = self._format_messages_for_compression(messages_to_compress)
+        # Format the message
+        message_text = self._format_message(message)
 
         # Create compression prompt
-        compression_prompt = f"""Summarize the following conversation exchange concisely, preserving key information, decisions, and context that might be relevant for future conversation turns. Focus on:
-- Main topics discussed
-- Important facts or data mentioned
-- Decisions or conclusions reached
-- User preferences or requirements stated
+        if self.condensed_summary:
+            compression_prompt = f"""You are managing a conversation history summary. You need to incorporate a new message into an existing summary.
 
-Conversation to summarize:
-{conversation_text}
+Existing summary:
+{self.condensed_summary}
 
-Provide a concise summary (2-3 sentences max):"""
+New message to incorporate:
+{message_text}
+
+Provide an updated summary that includes the new message while maintaining key information from the existing summary. Keep it concise (2-4 sentences max):"""
+        else:
+            # First message to compress
+            compression_prompt = f"""Summarize the following message concisely, preserving key information, decisions, and context that might be relevant for future conversation turns.
+
+Message to summarize:
+{message_text}
+
+Provide a concise summary (6-7 sentences max):"""
 
         # Call Gemini to compress
         config = types.GenerateContentConfig(
             temperature=0.3,  # Lower temperature for consistent summaries
-            max_output_tokens=200,
+            max_output_tokens=300,
         )
 
         response = await self.client.aio.models.generate_content(
@@ -158,66 +151,53 @@ Provide a concise summary (2-3 sentences max):"""
             config=config,
         )
 
-        summary = response.text.strip()
-        self.compressed_summaries.append(summary)
+        self.condensed_summary = response.text.strip()
 
-    def _format_messages_for_compression(self, messages: List[types.Content]) -> str:
+    def _format_message(self, message: types.Content) -> str:
         """
-        Format messages into readable text for compression.
+        Format a single message into readable text.
 
         Args:
-            messages: List of Content objects to format
+            message: Content object to format
 
         Returns:
             Formatted string representation
         """
-        formatted = []
-        for msg in messages:
-            role = "User" if msg.role == "user" else "Assistant"
+        role = "User" if message.role == "user" else "Assistant"
 
-            # Extract text from parts
-            text_parts = []
-            for part in msg.parts:
-                if hasattr(part, 'text') and part.text:
-                    text_parts.append(part.text)
+        # Extract text from parts
+        text_parts = []
+        for part in message.parts:
+            if hasattr(part, 'text') and part.text:
+                text_parts.append(part.text)
 
-            if text_parts:
-                formatted.append(f"{role}: {' '.join(text_parts)}")
+        return f"{role}: {' '.join(text_parts)}" if text_parts else f"{role}: [no text content]"
 
-        return "\n".join(formatted)
-
-    def _build_summary_text(self) -> str:
-        """
-        Build a combined summary from all compressed summaries.
-
-        Returns:
-            Combined summary text
-        """
-        if len(self.compressed_summaries) == 1:
-            return self.compressed_summaries[0]
-
-        # For multiple summaries, combine them with context
-        combined = []
-        for i, summary in enumerate(self.compressed_summaries):
-            combined.append(f"Part {i+1}: {summary}")
-
-        return " | ".join(combined)
 
     def clear_history(self):
-        """Clear all history and summaries."""
-        self.full_history.clear()
-        self.compressed_summaries.clear()
+        """Clear all history and summary."""
+        self.message_queue.clear()
+        self.condensed_summary = ""
 
-    def get_full_history(self) -> List[types.Content]:
+    def get_queue_messages(self) -> List[types.Content]:
         """
-        Get the complete uncompressed history.
+        Get the current messages in the queue.
 
         Returns:
-            Full conversation history
+            List of messages in the queue
         """
-        return self.full_history.copy()
+        return list(self.message_queue)
 
-    def get_history_stats(self) -> Dict[str, int]:
+    def get_condensed_summary(self) -> str:
+        """
+        Get the current condensed summary.
+
+        Returns:
+            The condensed summary text
+        """
+        return self.condensed_summary
+
+    def get_history_stats(self) -> Dict[str, any]:
         """
         Get statistics about the current history state.
 
@@ -225,9 +205,9 @@ Provide a concise summary (2-3 sentences max):"""
             Dictionary with history statistics
         """
         return {
-            "total_messages": len(self.full_history),
-            "recent_messages": min(self.recent_message_count, len(self.full_history)),
-            "compressed_summaries": len(self.compressed_summaries),
-            "compression_active": len(self.full_history) > self.compression_threshold
+            "queue_size": self.queue_size,
+            "messages_in_queue": len(self.message_queue),
+            "has_condensed_summary": bool(self.condensed_summary),
+            "condensed_summary_length": len(self.condensed_summary) if self.condensed_summary else 0
         }
 
