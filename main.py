@@ -220,10 +220,16 @@ class GeminiMCPChat:
             config=generate_content_config,
         )
 
-        await self.history_manager.add_messages([
-            user_content,
-            response_message
-        ])
+        # Merge user and assistant messages into a single Content object for history
+        combined_content = types.Content(
+            role="user",  # Store as user role to maintain conversation context
+            parts=[
+                types.Part.from_text(text=f"User: {user_message}"),
+                types.Part.from_text(text=f"Assistant: {response_message.text}")
+            ]
+        )
+
+        await self.history_manager.add_message(combined_content)
 
         yield response_message
 

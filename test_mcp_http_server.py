@@ -15,6 +15,7 @@ from typing import Dict, Any, List
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import uvicorn
+import httpx
 from jinja2 import FileSystemLoader, Environment
 import vertexai
 from vertexai.language_models import TextEmbeddingModel
@@ -85,7 +86,7 @@ async def execute_tool(tool_name: str, tool_args: Dict[str, Any]) -> List[Dict[s
         template = env.get_template("claude_MCP_R-D/templates/documents.jinja2")
 
         documents_str = await template.render_async(documents=documents)
-        print(documents_str)
+        #print(documents_str)
         result = {
             "documents": documents_str
         }
@@ -94,6 +95,112 @@ async def execute_tool(tool_name: str, tool_args: Dict[str, Any]) -> List[Dict[s
             "type": "text",
             "text": json.dumps(result, ensure_ascii=False)
         }]
+
+    elif tool_name == "get_weather":
+        city = tool_args.get("city")
+        country_code = tool_args.get("country_code", "")
+        units = tool_args.get("units", "metric")
+
+        try:
+            # Using Open-Meteo API (free, no API key required)
+            # First, get coordinates for the city using geocoding
+            location_query = f"{city},{country_code}" if country_code else city
+
+            async with httpx.AsyncClient() as client:
+                # Geocoding API to get coordinates
+                geocoding_url = f"https://geocoding-api.open-meteo.com/v1/search"
+                geo_params = {
+                    "name": city,
+                    "count": 1,
+                    "language": "en",
+                    "format": "json"
+                }
+
+                geo_response = await client.get(geocoding_url, params=geo_params)
+                geo_data = geo_response.json()
+
+                if not geo_data.get("results"):
+                    return [{
+                        "type": "text",
+                        "text": json.dumps({
+                            "error": f"City '{city}' not found. Please check the spelling or try adding a country code."
+                        }, ensure_ascii=False)
+                    }]
+
+                location = geo_data["results"][0]
+                latitude = location["latitude"]
+                longitude = location["longitude"]
+                location_name = location.get("name", city)
+                country = location.get("country", "")
+
+                # Weather API to get current weather
+                weather_url = "https://api.open-meteo.com/v1/forecast"
+                weather_params = {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "current": "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m",
+                    "temperature_unit": "celsius" if units == "metric" else "fahrenheit",
+                    "wind_speed_unit": "kmh" if units == "metric" else "mph",
+                    "timezone": "auto"
+                }
+
+                weather_response = await client.get(weather_url, params=weather_params)
+                weather_data = weather_response.json()
+
+                current = weather_data.get("current", {})
+
+                # Weather code interpretation
+                weather_code = current.get("weather_code", 0)
+                weather_descriptions = {
+                    0: "Clear sky",
+                    1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+                    45: "Foggy", 48: "Depositing rime fog",
+                    51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
+                    61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+                    71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow",
+                    77: "Snow grains",
+                    80: "Slight rain showers", 81: "Moderate rain showers", 82: "Violent rain showers",
+                    85: "Slight snow showers", 86: "Heavy snow showers",
+                    95: "Thunderstorm", 96: "Thunderstorm with slight hail", 99: "Thunderstorm with heavy hail"
+                }
+                weather_condition = weather_descriptions.get(weather_code, "Unknown")
+
+                temp_unit = "°C" if units == "metric" else "°F"
+                wind_unit = "km/h" if units == "metric" else "mph"
+
+                result = {
+                    "location": f"{location_name}, {country}",
+                    "coordinates": f"{latitude}, {longitude}",
+                    "temperature": f"{current.get('temperature_2m', 'N/A')}{temp_unit}",
+                    "feels_like": f"{current.get('apparent_temperature', 'N/A')}{temp_unit}",
+                    "weather": weather_condition,
+                    "humidity": f"{current.get('relative_humidity_2m', 'N/A')}%",
+                    "wind_speed": f"{current.get('wind_speed_10m', 'N/A')} {wind_unit}",
+                    "wind_direction": f"{current.get('wind_direction_10m', 'N/A')}°",
+                    "cloud_cover": f"{current.get('cloud_cover', 'N/A')}%",
+                    "precipitation": f"{current.get('precipitation', 'N/A')} mm",
+                    "timestamp": current.get('time', 'N/A')
+                }
+
+                return [{
+                    "type": "text",
+                    "text": json.dumps(result, ensure_ascii=False, indent=2)
+                }]
+
+        except httpx.HTTPError as e:
+            return [{
+                "type": "text",
+                "text": json.dumps({
+                    "error": f"Weather API request failed: {str(e)}"
+                }, ensure_ascii=False)
+            }]
+        except Exception as e:
+            return [{
+                "type": "text",
+                "text": json.dumps({
+                    "error": f"Failed to get weather data: {str(e)}"
+                }, ensure_ascii=False)
+            }]
 
     return [{
         "type": "text",

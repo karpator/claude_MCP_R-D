@@ -52,18 +52,6 @@ class ConversationHistoryManager:
         # Single condensed text summary of all older messages
         self.condensed_summary: str = ""
 
-
-    async def add_messages(self, contents: List[types.Content]):
-        """
-        Add multiple messages to the history.
-        For each message: if queue is full, pop oldest and compress it before adding new.
-
-        Args:
-            contents: List of message contents (user and/or model)
-        """
-        for content in contents:
-            await self.add_message(content)
-
     async def add_message(self, content: types.Content):
         """
         Add a single message to the history.
