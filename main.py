@@ -147,7 +147,7 @@ class GeminiMCPChat:
             project_id=project_id,
             region=region,
             model="gemini-2.5-flash",  # Lightweight model for compression
-            queue_size=3  # Keep last 10 messages in queue
+            queue_size=1  # Keep last 10 messages in queue
         )
 
     async def connect_servers(self, endpoints: Dict[str, str]):
@@ -249,12 +249,8 @@ class GeminiMCPChat:
                     break
 
                 if user_input.lower() == 'history':
-                    stats = self.history_manager.get_history_stats()
-                    print("\n History Statistics:")
-                    print(f"  Total messages: {stats['total_messages']}")
-                    print(f"  Recent messages (verbatim): {stats['recent_messages']}")
-                    print(f"  Compressed summaries: {stats['compressed_summaries']}")
-                    print(f"  Compression active: {stats['compression_active']}\n")
+                    history = self.history_manager.get_managed_history()
+                    print(f"  History: \n {history}")
                     continue
 
                 if user_input.lower() == 'tools':

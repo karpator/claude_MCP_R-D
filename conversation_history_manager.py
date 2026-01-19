@@ -91,7 +91,7 @@ class ConversationHistoryManager:
             )
 
         # Add all messages from the queue in reverse order (oldest to newest)
-        managed_history.extend(reversed(list(self.message_queue)))
+        managed_history.extend(list(self.message_queue))
 
         return managed_history
 
@@ -117,7 +117,7 @@ Existing summary:
 New message to incorporate:
 {message_text}
 
-Provide an updated summary that includes the new message while maintaining key information from the existing summary. Keep it concise (2-4 sentences max):"""
+Provide an updated summary that includes the new message while maintaining key information from the existing summary. If you don't have to reduce the output length, always have a few sentence summary about each question-answer pair. Aim for a concise summary (for each new pair, include the question and a 3-4 sentence summary of the answer):"""
         else:
             # First message to compress
             compression_prompt = f"""Summarize the following message concisely, preserving key information, decisions, and context that might be relevant for future conversation turns.
@@ -130,7 +130,7 @@ Provide a concise summary (6-7 sentences max):"""
         # Call Gemini to compress
         config = types.GenerateContentConfig(
             temperature=0.3,  # Lower temperature for consistent summaries
-            max_output_tokens=300,
+            max_output_tokens=8000,
         )
 
         response = await self.client.aio.models.generate_content(
@@ -184,18 +184,4 @@ Provide a concise summary (6-7 sentences max):"""
             The condensed summary text
         """
         return self.condensed_summary
-
-    def get_history_stats(self) -> Dict[str, any]:
-        """
-        Get statistics about the current history state.
-
-        Returns:
-            Dictionary with history statistics
-        """
-        return {
-            "queue_size": self.queue_size,
-            "messages_in_queue": len(self.message_queue),
-            "has_condensed_summary": bool(self.condensed_summary),
-            "condensed_summary_length": len(self.condensed_summary) if self.condensed_summary else 0
-        }
 
