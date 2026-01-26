@@ -5,7 +5,7 @@ A minimal template for creating your own MCP server with custom tools
 How to use:
 1. Modify the TOOLS list to define your tool's interface
 2. Implement your logic in the execute_tool() function
-3. Run: python test_mcp_http_server.py
+3. Run: python elastic_mcp.py
 """
 import os
 from datetime import datetime
@@ -19,13 +19,13 @@ import httpx
 from jinja2 import FileSystemLoader, Environment
 import vertexai
 from vertexai.language_models import TextEmbeddingModel
-
 from adapters.embedding_service import EmbeddingService
 from common import RetriveNode
 from post_retriver import AsyncPostRetriever
 
 # Initialize Vertex AI and embedding model once at startup
-vertexai.init()
+project_id = os.getenv("GoogleProjectId", "hu0092-bus-t-ai")
+vertexai.init(project=project_id)
 embedding_model = TextEmbeddingModel.from_pretrained("text-multilingual-embedding-002")
 
 # ============================================================================
@@ -86,7 +86,7 @@ async def execute_tool(tool_name: str, tool_args: Dict[str, Any]) -> List[Dict[s
         template = env.get_template("claude_MCP_R-D/templates/documents.jinja2")
 
         documents_str = await template.render_async(documents=documents)
-        #print(documents_str)
+        print(documents_str)
         result = {
             "documents": documents_str
         }
